@@ -105,7 +105,7 @@ const A = (r, c) => colName(c) + (r+1);   // 0-indexed r,c → "G2" style addres
 // ── XML cell updater (preserves s= style index, only updates value) ───────────
 function setCell(xml, addr, value) {
   const esc = addr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const re  = new RegExp(`<c r="${esc}"([^>]*)(?:\/>|>(?:(?!<\/c>)[\s\S]*?)<\/c>)`);
+  const re  = new RegExp('<c r="' + esc + '"([^>]*)(?:/>|>[\\s\\S]*?<\\/c>)');
   return xml.replace(re, (match, attrs) => {
     const sM = attrs.match(/s="(\d+)"/);
     const s  = sM ? sM[1] : '0';
@@ -321,7 +321,7 @@ async function generateXLSX(data, invNo, pcsPerCarton) {
   items.slice(0,5).forEach((it,idx)=>{
     const r=22+idx;
     inv=setCell(inv,A(r,0),idx+1);
-    inv=setCell(inv,A(r,1),parseInt(it.barcode));
+    inv=setCell(inv,A(r,1),String(it.barcode));
     inv=setCell(inv,A(r,3),it.color);
     inv=setCell(inv,A(r,4),it.size);
     inv=setCell(inv,A(r,5),it.description);
