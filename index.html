@@ -28,6 +28,9 @@ input[type=text]:focus{border-color:#3949AB}
 #btn{width:100%;padding:13px;background:#1A237E;color:#fff;border:none;border-radius:7px;font-size:15px;font-weight:700;cursor:pointer;letter-spacing:.3px;transition:background .2s;margin-top:4px}
 #btn:hover:not(:disabled){background:#303F9F}
 #btn:disabled{opacity:.6;cursor:not-allowed}
+#stickerBtn{width:100%;padding:13px;background:#1B5E20;color:#fff;border:none;border-radius:7px;font-size:15px;font-weight:700;cursor:pointer;letter-spacing:.3px;transition:background .2s;margin-top:8px}
+#stickerBtn:hover:not(:disabled){background:#2E7D32}
+#stickerBtn:disabled{opacity:.6;cursor:not-allowed}
 #status{margin-top:16px;padding:12px 14px;border-radius:6px;font-size:13px;line-height:1.7;display:none;white-space:pre-wrap}
 .ok{background:#E8F5E9;color:#1B5E20;border:1px solid #A5D6A7}
 .err{background:#FFEBEE;color:#B71C1C;border:1px solid #EF9A9A}
@@ -76,6 +79,7 @@ input[type=text]:focus{border-color:#3949AB}
     <div class="field"><label>Pcs per Carton</label><input type="text" id="ppcInput" value="50" placeholder="50"></div>
   </div>
   <button id="btn">&#9654;&nbsp; Generate &amp; Download Invoice</button>
+  <button id="stickerBtn">&#128230;&nbsp; Generate &amp; Download CTN Stickers</button>
   <div id="status"></div>
 </div>
 
@@ -284,7 +288,7 @@ async function parsePDF(file) {
 // ── Carton packer ─────────────────────────────────────────────────────────────
 function computeCartons(items,ppc){
   const c=[];
-  for(const it of items){let r=it.qty;while(r>0){const p=Math.min(r,ppc);c.push({barcode:it.barcode,size:it.size,description:it.description,color:it.color,pcs:p});r-=p;}}
+  for(const it of items){let r=it.qty;while(r>0){const p=Math.min(r,ppc);c.push({barcode:it.barcode,size:it.size,description:it.description,color:it.color,style:it.style,pcs:p});r-=p;}}
   const n=c.length; c.forEach((x,i)=>{x.carton_no=i+1;x.total=n;}); return c;
 }
 
@@ -412,6 +416,55 @@ async function generateXLSX(data, invNo, pcsPerCarton) {
     compression:'DEFLATE',
     compressionOptions:{level:6}
   });
+}
+
+// ── CTN Sticker XLSX generator (Calibri 24pt bold, medium/thin borders) ──────
+async function generateStickerXLSX(data, pcsPerCarton) {
+  const {po_number, items} = data;
+  const cartons = computeCartons(items, pcsPerCarton);
+  const n = cartons.length;
+
+  function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  function sC(ref,s,xf){ return `<c r="${ref}" s="${xf}" t="inlineStr"><is><t>${esc(s)}</t></is></c>`; }
+  function nC(ref,v,xf){ return `<c r="${ref}" s="${xf}"><v>${v}</v></c>`; }
+  function row(r,ht,cells){ return `<row r="${r}" ht="${ht}" customHeight="1">${cells}</row>`; }
+
+  let rows = '';
+  for(let k=0;k<n;k++){
+    const ct=cartons[k];
+    const b=k*10+1;
+    const cNo=String(ct.carton_no).padStart(2,'0');
+    const cTot=String(n).padStart(2,' ');
+    const cStr=`      ${cNo}           OF         ${cTot}      `;
+    rows+=row(b,   31,  sC(`A${b}`,'Vender Name',1)                          +sC(`B${b}`,'UNITED TEXTILE MILLS PVT. LTD.',4));
+    rows+=row(b+1, 31,  sC(`A${b+1}`,'Po Number',2)                          +sC(`B${b+1}`,po_number,5));
+    rows+=row(b+2, 31,  sC(`A${b+2}`,'SKU CODE',2)                           +sC(`B${b+2}`,String(ct.barcode),6));
+    rows+=row(b+3, 31,  sC(`A${b+3}`,'STYLE NO ',2)                          +sC(`B${b+3}`,ct.style,5));
+    rows+=row(b+4, 31,  sC(`A${b+4}`,'SIZE',2)                               +sC(`B${b+4}`,ct.size,5));
+    rows+=row(b+5, 31,  sC(`A${b+5}`,'Quantity ',2)                          +nC(`B${b+5}`,ct.pcs,5));
+    rows+=row(b+6, 31,  sC(`A${b+6}`,'Colour',2)                             +sC(`B${b+6}`,ct.color,5));
+    rows+=row(b+7, 31.5,sC(`A${b+7}`,'Carton',3)                             +sC(`B${b+7}`,cStr,7));
+    rows+=`<row r="${b+8}"/>`;
+    rows+=`<row r="${b+9}" ht="15" customHeight="1"/>`;
+  }
+
+  const sheet1=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetFormatPr defaultRowHeight="15"/><cols><col min="1" max="1" width="27.54296875" customWidth="1"/><col min="2" max="2" width="66.7265625" customWidth="1"/></cols><sheetData>${rows}</sheetData></worksheet>`;
+
+  const styles=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="24"/><name val="Calibri"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="8"><border><left/><right/><top/><bottom/><diagonal/></border><border><left style="medium"/><right style="thin"/><top style="medium"/><bottom style="thin"/><diagonal/></border><border><left style="medium"/><right style="thin"/><top style="thin"/><bottom style="thin"/><diagonal/></border><border><left style="medium"/><right style="thin"/><top style="thin"/><bottom style="medium"/><diagonal/></border><border><left style="thin"/><right style="medium"/><top style="medium"/><bottom style="thin"/><diagonal/></border><border><left style="thin"/><right style="medium"/><top style="thin"/><bottom style="thin"/><diagonal/></border><border><left style="thin"/><right style="thin"/><top style="thin"/><bottom style="thin"/><diagonal/></border><border><left style="thin"/><right style="medium"/><top style="thin"/><bottom style="medium"/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="8"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="1" xfId="0" applyFont="1" applyAlignment="1" applyBorder="1"><alignment horizontal="center" vertical="center"/></xf><xf numFmtId="0" fontId="1" fillId="0" borderId="2" xfId="0" applyFont="1" applyAlignment="1" applyBorder="1"><alignment horizontal="center" vertical="center"/></xf><xf numFmtId="0" fontId="1" fillId="0" borderId="3" xfId="0" applyFont="1" applyAlignment="1" applyBorder="1"><alignment horizontal="center" vertical="center"/></xf><xf numFmtId="0" fontId="1" fillId="0" borderId="4" xfId="0" applyFont="1" applyAlignment="1" applyBorder="1"><alignment horizontal="center" vertical="center"/></xf><xf numFmtId="0" fontId="1" fillId="0" borderId="5" xfId="0" applyFont="1" applyAlignment="1" applyBorder="1"><alignment horizontal="center" vertical="center"/></xf><xf numFmtId="0" fontId="1" fillId="0" borderId="6" xfId="0" applyFont="1" applyAlignment="1" applyBorder="1"><alignment horizontal="center" vertical="center"/></xf><xf numFmtId="0" fontId="1" fillId="0" borderId="7" xfId="0" applyFont="1" applyAlignment="1" applyBorder="1"><alignment horizontal="center" vertical="center"/></xf></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`;
+
+  const workbook=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Carton Stickers" sheetId="1" r:id="rId1"/></sheets></workbook>`;
+  const wbRels=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`;
+  const rels=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`;
+  const ct=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>`;
+
+  const zip=new JSZip();
+  zip.file('[Content_Types].xml',ct);
+  zip.file('_rels/.rels',rels);
+  zip.file('xl/workbook.xml',workbook);
+  zip.file('xl/_rels/workbook.xml.rels',wbRels);
+  zip.file('xl/styles.xml',styles);
+  zip.file('xl/worksheets/sheet1.xml',sheet1);
+  return await zip.generateAsync({type:'blob',mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',compression:'DEFLATE',compressionOptions:{level:6}});
 }
 
 // ── Size ordering ───────────────────────────────────────────────────────────
@@ -545,6 +598,31 @@ fi.addEventListener('change',()=>fi.files[0]&&setFile(fi.files[0]));
 drop.addEventListener('dragover',e=>{e.preventDefault();drop.classList.add('over');});
 drop.addEventListener('dragleave',()=>drop.classList.remove('over'));
 drop.addEventListener('drop',e=>{e.preventDefault();drop.classList.remove('over');setFile(e.dataTransfer.files[0]);});
+
+const stickerBtn=document.getElementById('stickerBtn');
+stickerBtn.addEventListener('click',async()=>{
+  if(!_rawData){showStatus('⚠  Please select a valid PO PDF first.','err');return;}
+  const ppc=parseInt(document.getElementById('ppcInput').value);
+  if(isNaN(ppc)||ppc<=0){showStatus('⚠  Pcs per Carton must be a positive number.','err');return;}
+  const invNo=document.getElementById('invNo').value.trim()||'CTN';
+  stickerBtn.disabled=true; stickerBtn.textContent='⏳  Generating…';
+  showStatus('Building carton stickers…','info');
+  try{
+    const data=buildData();
+    const blob=await generateStickerXLSX(data,ppc);
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a'); a.href=url; a.download=invNo+'-CTN-STICKERS.xlsx';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(()=>URL.revokeObjectURL(url),5000);
+    const c=computeCartons(data.items,ppc);
+    showStatus(`✅  Done!  ${invNo}-CTN-STICKERS.xlsx downloaded\nTotal Cartons: ${c.length}  |  Stickers: ${c.length}`,'ok');
+  }catch(e){
+    showStatus('❌  '+e.message,'err');
+    console.error(e);
+  }finally{
+    stickerBtn.disabled=false; stickerBtn.textContent='📦 Generate & Download CTN Stickers';
+  }
+});
 
 btn.addEventListener('click',async()=>{
   if(!_rawData){showStatus('⚠  Please select a valid PO PDF first.','err');return;}
