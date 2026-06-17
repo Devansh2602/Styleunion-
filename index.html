@@ -109,12 +109,20 @@ function setCell(xml, addr, value) {
   return xml.replace(re, (match, attrs) => {
     const sM = attrs.match(/s="(\d+)"/);
     const s  = sM ? sM[1] : '0';
+    const tM = attrs.match(/t="([^"]+)"/);
+    const origType = tM ? tM[1] : 'n';
     if (value === null || value === undefined || value === '') {
-      return `<c r="${addr}" s="${s}" t="n" />`;
+      if (origType === 'inlineStr') {
+        return `<c r="${addr}" s="${s}" t="inlineStr"><is><t></t></is></c>`;
+      }
+      return `<c r="${addr}" s="${s}" />`;
     } else if (typeof value === 'number') {
       return `<c r="${addr}" s="${s}" t="n"><v>${value}</v></c>`;
     } else {
       const v = String(value).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      if (origType === 'n') {
+        return `<c r="${addr}" s="${s}" t="str"><v>${v}</v></c>`;
+      }
       return `<c r="${addr}" s="${s}" t="inlineStr"><is><t>${v}</t></is></c>`;
     }
   });
@@ -321,7 +329,7 @@ async function generateXLSX(data, invNo, pcsPerCarton) {
   items.slice(0,5).forEach((it,idx)=>{
     const r=22+idx;
     inv=setCell(inv,A(r,0),idx+1);
-    inv=setCell(inv,A(r,1),String(it.barcode));
+    inv=setCell(inv,A(r,1),parseInt(it.barcode));
     inv=setCell(inv,A(r,3),it.color);
     inv=setCell(inv,A(r,4),it.size);
     inv=setCell(inv,A(r,5),it.description);
