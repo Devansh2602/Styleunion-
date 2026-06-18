@@ -123,7 +123,7 @@ const A = (r, c) => colName(c) + (r+1);   // 0-indexed r,c → "G2" style addres
 // ── XML cell updater (preserves s= style index, only updates value) ───────────
 function setCell(xml, addr, value) {
   const esc = addr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const re  = new RegExp('<c r="' + esc + '"([^>]*)(?:/>|>[\\s\\S]*?<\\/c>)');
+  const re  = new RegExp('<c r="' + esc + '"([^>]*?)(?:/>|>[\\s\\S]*?<\\/c>)');
   return xml.replace(re, (match, attrs) => {
     const sM = attrs.match(/s="(\d+)"/);
     const s  = sM ? sM[1] : '0';
