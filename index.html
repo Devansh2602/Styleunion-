@@ -56,6 +56,18 @@ input[type=text]:focus{border-color:#3949AB}
 .t-disp{font-weight:700;color:#1A237E;font-size:13px}
 .t-rate{color:#aaa;font-size:12px}
 .t-val{font-weight:700;color:#2E7D32;font-size:13px}
+/* ── PO Selector ───────────────────────────────────────────────────────────── */
+#poSelector{display:none;max-width:860px;margin:0 auto 20px;padding:0 20px}
+.po-sel-card{background:#fff;border-radius:10px;box-shadow:0 2px 12px rgba(0,0,0,.1);padding:24px 28px}
+.po-sel-card h2{border-bottom:2px solid #E8EAF6;padding-bottom:10px;margin-bottom:0;font-size:15px;font-weight:600;color:#1A237E}
+.po-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;margin-top:16px}
+.po-card{background:#F8F9FF;border:2px solid #C5CAE9;border-radius:8px;padding:16px;cursor:pointer;transition:all .18s}
+.po-card:hover{border-color:#3949AB;background:#ECEFF8;transform:translateY(-2px);box-shadow:0 4px 12px rgba(57,73,171,.15)}
+.po-card-num{font-size:11.5px;font-weight:700;color:#1A237E;margin-bottom:6px;word-break:break-all}
+.po-card-desc{font-size:13px;font-weight:600;color:#333;margin-bottom:5px}
+.po-card-date{font-size:11px;color:#888;margin-bottom:3px}
+.po-card-amt{font-size:16px;font-weight:700;color:#2E7D32;margin-bottom:3px}
+.po-card-items{font-size:10.5px;color:#aaa}
 </style>
 </head>
 <body>
@@ -82,6 +94,8 @@ input[type=text]:focus{border-color:#3949AB}
   <button id="stickerBtn">&#128230;&nbsp; Generate &amp; Download CTN Stickers</button>
   <div id="status"></div>
 </div>
+
+<div id="poSelector"></div>
 
 <div id="itemsSection">
   <div class="items-card">
@@ -241,11 +255,46 @@ async function extractLines(file) {
 // So allow optional whitespace between rate.000 and MRP, and MRP decimal is optional
 const ITEM_RE=/^(\d{13})\s+STYLE UNION\s+(\S+)\s+(.+?)\s+(\d{8})\s+(\d+)\.000\s*(\d+\.?\d*)\s+([\d,]+\.?\d*)\s+PCS\s+([\d,]+\.?\d*)$/;
 
-async function parsePDF(file) {
-  const lines=await extractLines(file);
+// ── Split flat lines into one section per unique PO number ────────────────────
+function splitByPO(lines){
+  const sections=[];
+  let curPO=null, start=0;
+  for(let i=0;i<lines.length;i++){
+    const m=lines[i].match(/Order No\.\s*:\s*(PO\S+)/);
+    if(m){
+      const po=m[1];
+      if(curPO===null){curPO=po;start=i;}
+      else if(po!==curPO){sections.push({po_number:curPO,lines:lines.slice(start,i)});curPO=po;start=i;}
+    }
+  }
+  if(curPO) sections.push({po_number:curPO,lines:lines.slice(start)});
+  return sections;
+}
+
+// ── Quick info scan for PO selector cards ─────────────────────────────────────
+function quickScanPO(lines){
+  let date='',netAmt=0,style='',color='';
+  let itemCount=0;
+  for(const ln of lines){
+    if(!date){const m=ln.match(/Date\s*:\s*(\d{2}-\d{2}-\d{4})/);if(m)date=m[1];}
+    if(!netAmt){const m=ln.match(/Net Amount\s+([\d,]+\.?\d*)/);if(m)netAmt=parseFloat(m[1].replace(/,/g,''));}
+    const mi=ITEM_RE.exec(ln);
+    if(mi){
+      itemCount++;
+      if(!style)style=mi[2];
+      if(!color){
+        const tok=mi[3].trim().split(/\s+/);
+        for(let i=0;i<tok.length;i++){if(SZ.has(tok[i].replace(/-$/,'').toUpperCase())){color=tok.slice(0,i).join(' ');break;}}
+      }
+    }
+  }
+  return{date,netAmt,style,color,itemCount};
+}
+
+function parsePOLines(lines) {
   const d={};
   for(const ln of lines){const m=ln.match(/Order No\.\s*:\s*(PO\S+)/);if(m){d.po_number=m[1];break;}}
-  if(!d.po_number) throw new Error('PO number not found. Is this a Style Union PO PDF?');
+  if(!d.po_number) throw new Error('PO number not found.');
   d.po_date='';
   for(const ln of lines){const m=ln.match(/Date\s*:\s*(\d{2}-\d{2}-\d{4})/);if(m){const[dd,mm,yyyy]=m[1].split('-');d.po_date=`${dd}.${mm}.${yyyy}`;break;}}
   d.gstin='';
@@ -560,6 +609,7 @@ function buildData(){
 
 // ── UI ─────────────────────────────────────────────────────────────────────────────────
 let selectedFile=null;
+let _poSections=[];
 const drop=document.getElementById('drop');
 const fi=document.getElementById('fileInput');
 const fname=document.getElementById('fname');
@@ -570,15 +620,60 @@ function showStatus(msg,cls){
   statusEl.textContent=msg; statusEl.className=cls; statusEl.style.display='block';
 }
 
+function hidePOSelector(){document.getElementById('poSelector').style.display='none';}
+
+function showPOSelector(sections){
+  const sel=document.getElementById('poSelector');
+  let cards='';
+  sections.forEach((sec,idx)=>{
+    const info=quickScanPO(sec.lines);
+    const fmtAmt=info.netAmt?'₹'+info.netAmt.toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2}):'—';
+    const desc=[info.style,info.color].filter(Boolean).join(' · ')||'—';
+    cards+=`<div class="po-card" onclick="selectPO(${idx})">
+      <div class="po-card-num">${sec.po_number}</div>
+      <div class="po-card-desc">${desc}</div>
+      <div class="po-card-date">&#128197; ${info.date||'—'}</div>
+      <div class="po-card-amt">${fmtAmt}</div>
+      <div class="po-card-items">${info.itemCount} line item${info.itemCount!==1?'s':''}</div>
+    </div>`;
+  });
+  sel.innerHTML=`<div class="po-sel-card">
+    <h2>&#128193;&nbsp; Found ${sections.length} Purchase Orders &mdash; select one to generate documents</h2>
+    <div class="po-grid">${cards}</div>
+  </div>`;
+  sel.style.display='block';
+}
+
+function selectPO(idx){
+  try{
+    _rawData=parsePOLines(_poSections[idx].lines);
+    renderItemsTable(_rawData);
+    hidePOSelector();
+    statusEl.style.display='none';
+  }catch(e){
+    showStatus('❌  '+e.message,'err');
+  }
+}
+
 async function loadPDF(f){
-  _rawData=null; _groups=[]; _allSizes=[];
+  _rawData=null; _groups=[]; _allSizes=[]; _poSections=[];
   document.getElementById('itemsSection').style.display='none';
+  hidePOSelector();
   showStatus('Reading PDF…','info');
   btn.disabled=true;
   try{
-    _rawData=await parsePDF(f);
-    renderItemsTable(_rawData);
-    statusEl.style.display='none';
+    const lines=await extractLines(f);
+    const sections=splitByPO(lines);
+    if(!sections.length) throw new Error('No PO found. Is this a Style Union PO PDF?');
+    if(sections.length===1){
+      _rawData=parsePOLines(sections[0].lines);
+      renderItemsTable(_rawData);
+      statusEl.style.display='none';
+    } else {
+      _poSections=sections;
+      showPOSelector(sections);
+      showStatus(`&#128193; ${sections.length} POs found &mdash; click a card above to select one`,'info');
+    }
   }catch(e){
     showStatus('❌  '+e.message,'err');
   }finally{
