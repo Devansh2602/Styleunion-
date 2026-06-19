@@ -54,8 +54,9 @@ input[type=text]:focus{border-color:#3949AB}
 .sz-ord{font-size:10px;color:#bbb}
 .t-ord{color:#999;font-size:13px}
 .t-disp{font-weight:700;color:#1A237E;font-size:13px}
-.t-rate{color:#aaa;font-size:12px}
 .t-val{font-weight:700;color:#2E7D32;font-size:13px}
+.rate-inp{width:74px;padding:5px 4px;border:1.5px solid #FBC02D;border-radius:5px;font-size:13px;font-weight:700;text-align:center;outline:none;color:#1A237E;background:#FFFDE7}
+.rate-inp:focus{border-color:#F9A825;background:#FFF9C4}
 /* ── PO Selector ───────────────────────────────────────────────────────────── */
 #poSelector{display:none;max-width:860px;margin:0 auto 20px;padding:0 20px}
 .po-sel-card{background:#fff;border-radius:10px;box-shadow:0 2px 12px rgba(0,0,0,.1);padding:24px 28px}
@@ -584,7 +585,10 @@ function renderItemsTable(data){
       ${szcells}
       <td class="t-ord">${ordTotal}</td>
       <td class="t-disp" id="${rid}-d">${ordTotal}</td>
-      <td class="t-rate">₹${g.rate.toFixed(2)}</td>
+      <td><div class="sz-wrap">
+        <input class="rate-inp" type="number" min="0" step="0.01" value="${g.rate.toFixed(2)}" id="${rid}-r" oninput="updRow('${rid}')">
+        <div class="sz-ord">PO: ₹${g.rate.toFixed(2)}</div>
+      </div></td>
       <td class="t-val" id="${rid}-v">${fmtVal(ordTotal*g.rate)}</td>
     </tr>`;
   });
@@ -596,7 +600,8 @@ function renderItemsTable(data){
 
 function updRow(rid){
   const row=document.getElementById(rid);
-  const rate=parseFloat(row.dataset.rate);
+  const rateInp=document.getElementById(rid+'-r');
+  const rate=Math.max(0,parseFloat(rateInp.value)||0);
   let tot=0;
   for(const inp of row.querySelectorAll('.sz-inp')) tot+=Math.max(0,parseInt(inp.value)||0);
   document.getElementById(rid+'-d').textContent=tot;
@@ -610,13 +615,15 @@ function buildData(){
   _groups.forEach((g,idx)=>{
     const row=document.getElementById(`gr${idx}`);
     const inputs=[...row.querySelectorAll('.sz-inp')];
+    const rateInp=document.getElementById(`gr${idx}-r`);
+    const rate=Math.max(0,parseFloat(rateInp.value)||g.rate);
     let ii=0;
     for(const sz of _allSizes){
       const sd=g.sizes.get(sz);
       if(sd){
         const qty=Math.max(0,parseInt(inputs[ii].value)||0);
         ii++;
-        if(qty>0) newItems.push({...sd, qty, amount:Math.round(qty*g.rate*100)/100});
+        if(qty>0) newItems.push({...sd, rate, qty, amount:Math.round(qty*rate*100)/100});
       }
     }
   });
