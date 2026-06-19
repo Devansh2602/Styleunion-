@@ -183,6 +183,23 @@ function numToWords(amount) {
   return w;
 }
 
+// ── Amount formatter: commas, no .00 for whole numbers ───────────────────────
+function fmtAmt(n) {
+  if (typeof n !== 'number' || isNaN(n)) return '0';
+  const isWhole = Math.abs(n - Math.round(n)) < 0.005;
+  const val = isWhole ? Math.round(n) : n;
+  try {
+    return isWhole
+      ? val.toLocaleString('en-IN')
+      : val.toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2});
+  } catch(e) {
+    // fallback: western commas
+    return isWhole
+      ? val.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+      : val.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  }
+}
+
 // ── Color/Size/Description parser ─────────────────────────────────────────────
 const SZ=new Set(['XS','S','M','L','XL','XXL','XXXL','FS','FREESIZE']);
 function parseColorSizeDesc(cp, nl) {
@@ -389,13 +406,13 @@ async function generateXLSX(data, invNo, pcsPerCarton) {
     inv=setCell(inv,A(r,4),it.size);
     inv=setCell(inv,A(r,5),it.description);
     inv=setCell(inv,A(r,6),it.style);
-    inv=setCell(inv,A(r,7),parseInt(it.hsn));
+    inv=setCell(inv,A(r,7),String(parseInt(it.hsn)));
     inv=setCell(inv,A(r,8),'EA');
     inv=setCell(inv,A(r,9),it.mrp);
     inv=setCell(inv,A(r,10),it.rate);
     inv=setCell(inv,A(r,11),it.qty);
     inv=setCell(inv,A(r,12),it.qty);
-    inv=setCell(inv,A(r,13),it.amount);
+    inv=setCell(inv,A(r,13),fmtAmt(it.amount));
   });
   // Clear unused item rows
   for(let idx=items.length;idx<5;idx++){
@@ -405,18 +422,18 @@ async function generateXLSX(data, invNo, pcsPerCarton) {
 
   // Footer totals (T = 0-indexed row 31 = Excel row 32 TOTAL)
   const T=31;
-  inv=setCell(inv,A(T,11),total_qty);      // L32 No of Packs total
-  inv=setCell(inv,A(T,12),total_qty);      // M32 Item Qty total
-  inv=setCell(inv,A(T,13),total_amt);      // N32 Amount total
-  inv=setCell(inv,A(T+1,13),0);            // N33 Discount
-  inv=setCell(inv,A(T+2,13),total_amt);    // N34 Total after discount
-  inv=setCell(inv,A(T+3,13),0);            // N35 MRP Value
-  inv=setCell(inv,A(T+4,13),total_amt);    // N36 Assessable Value
-  inv=setCell(inv,A(T+5,13),0);            // N37 blank
+  inv=setCell(inv,A(T,11),total_qty);               // L32 No of Packs total
+  inv=setCell(inv,A(T,12),total_qty);               // M32 Item Qty total
+  inv=setCell(inv,A(T,13),fmtAmt(total_amt));       // N32 Amount total
+  inv=setCell(inv,A(T+1,13),fmtAmt(0));             // N33 Discount
+  inv=setCell(inv,A(T+2,13),fmtAmt(total_amt));     // N34 Total after discount
+  inv=setCell(inv,A(T+3,13),fmtAmt(0));             // N35 MRP Value
+  inv=setCell(inv,A(T+4,13),fmtAmt(total_amt));     // N36 Assessable Value
+  inv=setCell(inv,A(T+5,13),fmtAmt(0));             // N37 blank
   inv=setCell(inv,A(T+6,11),`${Math.round(igst_rate*100)}%`); // L38 IGST rate
-  inv=setCell(inv,A(T+6,13),igst_amt);     // N38 IGST amount
-  inv=setCell(inv,A(T+9,13),0);            // N41 Round off
-  inv=setCell(inv,A(T+10,13),grand);       // N42 Grand total
+  inv=setCell(inv,A(T+6,13),fmtAmt(igst_amt));      // N38 IGST amount
+  inv=setCell(inv,A(T+9,13),fmtAmt(0));             // N41 Round off
+  inv=setCell(inv,A(T+10,13),fmtAmt(grand));        // N42 Grand total
   inv=setCell(inv,A(T+11,0),`Amount Chargeable ( in Words ) : ${numToWords(grand)} ONLY.`);
   inv=setCell(inv,A(T+12,0),`IGST Amount ( in words) : ${numToWords(igst_amt)} ONLY.`);
 
